@@ -130,6 +130,41 @@ Linux TP-LINK 2.6.31 #1 Mon Jan 16 17:34:02 CST 2012 mips GNU/Linux
 
 ---
 
+## 💣 Additional Finding: Unauthenticated TFTP Kernel Module Injection
+
+In addition to the interactive root shell backdoor, the function `ArtRpmHtm()` (VMA `0x482824`), registered at `/userRpmNatDebugRpm26525557/start_art.html`, exposes a direct remote kernel module loader:
+
+```c
+// Triggered command sequence executed in httpd
+arping -I %s -c 1 %s
+tftp -g %s -r %s/%s -l /tmp/art.ko
+insmod /tmp/art.ko
+chmod 777 /tmp/mdk_client.out
+/tmp/mdk_client.out &
+```
+Any remote client can induce the router to fetch a kernel object (`.ko`) from an attacker-controlled TFTP server and insert it straight into ring 0 via `insmod`, completely hijacking the Linux kernel without rebooting!
+
+*PoC Script:* [`poc/exploit_art_kernel_load.py`](poc/exploit_art_kernel_load.py)
+
+---
+
+## 🏛️ Comparative Audit: SOHO (2012) vs. Enterprise (2025)
+
+As part of this research, the security architecture of the 2012 TP-Link SOHO router was benchmarked against modern enterprise networking hardware (**Huawei eKitEngine AP265E**, Firmware `V200R025C00SPC100`, January 2025).
+
+| Security Dimension | TP-Link TL-WR841N v7 (2012) | Huawei eKitEngine AP265E (2025) |
+| :--- | :--- | :--- |
+| **Factory Backdoors** | 🔴 **CRITICAL**: Hardcoded root shell (`osteam:5up`) | 🟢 **NONE**: Zero undocumented web debug backdoors in shipping firmware |
+| **Kernel Integrity** | 🔴 **UNPROTECTED**: Unauthenticated TFTP `insmod` | 🟢 **ENFORCED**: Signed kernel modules, secure boot verification |
+| **Default Credentials** | 🔴 **WEAK**: Default `admin:admin`, no forced change | 🟢 **SECURED**: KMC AES cipher (`$1b$`), forced complex password rotation (`first_login=y`) |
+| **Access Control** | 🔴 **BROKEN**: Static page paths queryable directly | 🟢 **HARDENED**: Memory-mapped `web.7z` with strict `token.ini` validation (404 on unauth) |
+| **Binary Protections** | 🔴 **NONE**: No Stack Canaries, No ASLR, Executable Stack | 🟢 **ACTIVE**: Full Stack Canaries, ASLR, NX/DEP, Fortify Source |
+| **Client Isolation** | 🔴 **NONE**: Flat bridged LAN (lateral movement trivial) | 🟢 **STRICT**: Layer 2 & Layer 3 User Isolation (`USER_ISOLATE=1`) |
+
+*Full comparative report available at:* [`docs/tp-link-vs-huawei-comparison.md`](docs/tp-link-vs-huawei-comparison.md)
+
+---
+
 ## 🛡️ Remediation
 
 * **For Developers:** Never leave engineering debug endpoints active in production firmware builds. Guard all internal testing facilities using preprocessor directives:
