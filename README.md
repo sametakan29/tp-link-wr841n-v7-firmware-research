@@ -77,6 +77,47 @@ write(master_fd, cmd, strlen(cmd));
 write(master_fd, "\n", 1);
 ```
 
+### 4. Built-in Web Terminal GUI (`HttpDebugRpm.htm`)
+Rather than relying solely on raw HTTP API calls, TP-Link developers actually bundled a full interactive web terminal client directly in the firmware at `/web/userRpm/HttpDebugRpm.htm` ([view raw file](assets/HttpDebugRpm.htm)).
+
+It provides bash command history with Previous/Next buttons and **11 one-click root diagnostic shortcuts**:
+
+```
++---------------------------------------------------------------------------------+
+|  Username: [ osteam           ]   Password: [ ********        ]                 |
+|  [ Last Cmd ]  [ Next Cmd ]                                                     |
+|  Command:  [ ps                                              ]  [ SEND ] [CLR]  |
++-------------------------------------------------------------------+-------------+
+|                                                                   |  [ PROC ]   |  <- "ps"
+|  UID        PID  PPID  C STIME TTY          TIME CMD              |  [ NET  ]   |  <- "ifconfig"
+|    0          1     0  0 17:34 ?        00:00:01 init             |  [ RT   ]   |  <- "route"
+|    0        512     1  0 17:34 ?        00:00:00 /usr/bin/httpd   |  [ NAT  ]   |  <- "iptables -t nat -L"
+|    0       1204   512  0 17:35 pts/0    00:00:00 /bin/sh          |  [ MEM  ]   |  <- "cat /proc/meminfo"
+|                                                                   |  [ MOD  ]   |  <- "lsmod"
+|                                                                   |  [ IPT  ]   |  <- "iptables -t filter -L"
+|                                                                   |  [ LOG  ]   |  <- "logread"
+|                                                                   |  [ CONN ]   |  <- ip_conntrack_count
+|                                                                   |  [ ARP  ]   |  <- "cat /proc/net/arp"
+|                                                                   |  [ FLOW ]   |  <- "cat /proc/net/dev"
++-------------------------------------------------------------------+-------------+
+```
+
+---
+
+## 🔑 Credential Analysis: Atheros LSDK Root Hash in `/etc/shadow`
+
+During the filesystem extraction, the router's `/etc/shadow` file revealed that the password `5up` was not merely a random passphrase picked for the web backdoor:
+
+```text
+root:$1$$zdlNHiCDxYDfeF4MZL.H3/:10933:0:99999:7:::
+Admin:$1$$zdlNHiCDxYDfeF4MZL.H3/:10933:0:99999:7:::
+```
+
+* The hash uses standard Unix MD5 crypt (`$1$`) with an **empty salt** (`$1$$`).
+* Cracking the hash against standard default vendor wordlists yields:
+  $$\mathbf{\$1\$\$zdlNHiCDxYDfeF4MZL.H3/} \longrightarrow \mathbf{"5up"}$$
+* **Finding:** `5up` is the factory default password embedded by Qualcomm/Atheros in their reference Linux Board Support Package (LSDK). TP-Link reused this vendor default across both local Linux root accounts and the unauthenticated web service backdoor.
+
 ---
 
 ## 🛠️ Proof of Concept (PoC)
@@ -118,14 +159,17 @@ Linux TP-LINK 2.6.31 #1 Mon Jan 16 17:34:02 CST 2012 mips GNU/Linux
 ## 📁 Repository Structure
 
 ```text
-├── README.md                 <- Executive summary, advisory & vulnerability analysis
+├── README.md                           <- Executive summary, advisory & vulnerability analysis
 ├── docs/
-│   └── vulnerability-report.md <- In-depth technical advisory documentation
+│   ├── vulnerability-report.md         <- Comprehensive technical advisory documentation
+│   └── tp-link-vs-huawei-comparison.md <- SOHO (2012) vs. Enterprise (2025) comparative audit
 ├── poc/
-│   └── exploit_backdoor.py   <- Proof of Concept Python automation script
+│   ├── exploit_backdoor.py             <- Proof of Concept root shell automation script
+│   └── exploit_art_kernel_load.py      <- Unauthenticated TFTP kernel injection script
 ├── ghidra/
-│   └── decompiled_backdoor.c <- Annotated MIPS decompilation from httpd binary
-└── assets/                   <- Architecture diagrams & screenshots
+│   └── decompiled_backdoor.c           <- Annotated MIPS decompilation from httpd binary
+└── assets/
+    └── HttpDebugRpm.htm                <- Extracted factory web terminal HTML source
 ```
 
 ---
